@@ -1,8 +1,9 @@
 import requests
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
+import os
 
-BOT_TOKEN = "7908931274:AAEey8t2JtetEpywkkvhnGkzh6XoHz9PoZA"
+BOT_TOKEN = os.getenv('BOT_KEY')
 BACKEND_API_URL = "https://eyemanowar.pythonanywhere.com/api/latest-releases"
 
 def main() -> None:
