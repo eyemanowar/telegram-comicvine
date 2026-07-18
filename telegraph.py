@@ -1,7 +1,9 @@
 import requests
 from dotenv import load_dotenv
+import json
 import os
 
+load_dotenv('keys.env')
 TELEGRAPH_API_KEY = os.getenv('TELEGRAPH_API_KEY')
 
 class Telegraph:
@@ -11,12 +13,12 @@ class Telegraph:
         self.title = "This week's releases"
         self.author = "John Doe"
 
-    def make_post(self, json):
+    def make_post(self, content):
         page_response = requests.post("https://api.telegra.ph/createPage", data={
             "access_token": self.tokken,
             "title": self.title,
             "author_name": self.author,
-            "content": str(json),
+            "content": json.dumps(content),
             "return_content": "true"
         })
 

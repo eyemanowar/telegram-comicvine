@@ -5,7 +5,11 @@ import re
 import requests
 from dotenv import load_dotenv
 import os
+import logging
 
+logger = logging.getLogger(__name__)
+
+load_dotenv('keys.env')
 COMICVINE_API_KEY = os.getenv('COMICVINE_API_KEY')
 
 class ComicVine:
@@ -31,7 +35,7 @@ class ComicVine:
         self.api_handler = ApiHandler()
 
     @staticmethod
-    def prep_content(self, comic):
+    def prep_content(comic):
         if not comic['description']:
             cleaned_description = 'No discription'
         else:
@@ -52,20 +56,18 @@ class ComicVine:
     def get_new_issues(self, date):
         self.params['filter'] = f'store_date:{date[0]}|{date[1]}'
         data = self.api_handler.get_request(url=self.url,params=self.params)
-        print(self.params)
-        with open("hello1.json", "w") as my_file:
-            json.dump(data, my_file, indent=4)
+        #     to rewrite for the dynamic db
         with open('/Users/oleksiikol/Documents/ComicsHelper/database/database.json', 'r') as db_file:
             db = json.load(db_file)
             following_comics = db.keys()
         for comic in data['results']:
             comic_name = comic['volume']['name'].replace(":", ' -')
             if comic_name in following_comics:
-                print(f'{comic['volume']['name']} is in reading list')
-                self.content_for_telegraph_continuous += self.prep_content(self, comic)
+                logger.info(f'{comic['volume']['name']} is in reading list')
+                self.content_for_telegraph_continuous += self.prep_content(comic)
             elif comic['issue_number'] == '1':
-                print(f'{comic['volume']['name']} is a new series')
-                self.content_for_telegraph_new_series += self.prep_content(self, comic)
+                logger.info(f'{comic['volume']['name']} is a new series')
+                self.content_for_telegraph_new_series += self.prep_content(comic)
             else:
                 pass
-        return json.dumps(self.content_for_telegraph_new_series + self.content_for_telegraph_continuous)
+        return (self.content_for_telegraph_new_series + self.content_for_telegraph_continuous)
