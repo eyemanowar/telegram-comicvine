@@ -63,6 +63,13 @@ export COMICVINE_API_KEY='your_comicvine_api_key'
 python bot.py
 ```
 
+## Running tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
 ## Usage
 
 The bot cross-references ComicVine releases with your personal reading list from ComicsHelper, automatically highlighting:
