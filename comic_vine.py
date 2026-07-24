@@ -1,8 +1,7 @@
 from api_handler import ApiHandler
-import json
-import urllib.parse
+from database_helper import DbHandler
+# import json
 import re
-import requests
 from dotenv import load_dotenv
 import os
 import logging
@@ -11,19 +10,12 @@ logger = logging.getLogger(__name__)
 
 load_dotenv('keys.env')
 COMICVINE_API_KEY = os.getenv('COMICVINE_API_KEY')
+# db_path = os.getenv('DATABASE_PATH', 'reading_list.json')
 
 class ComicVine:
 
     def __init__(self):
         self.api_key = COMICVINE_API_KEY
-        self.content_for_telegraph_new_series = [
-            {"tag": "b", "children": ["New series starting:"]},
-        ]
-        self.content_for_telegraph_continuous = [
-            {"tag": "p", "children": []},
-            {"tag": "hr", "children": ["• • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • •"]},
-            {"tag": "b", "children": ["Continuous series"]}
-        ]
         self.params = {
             'api_key': self.api_key,
             'format': 'json',
@@ -33,6 +25,7 @@ class ComicVine:
         }
         self.url = 'https://comicvine.gamespot.com/api/issues/'
         self.api_handler = ApiHandler()
+        self.db_handler = DbHandler()
 
     @staticmethod
     def prep_content(comic):
@@ -53,21 +46,29 @@ class ComicVine:
         ]
         return comic_content
 
-    def get_new_issues(self, date):
+    def get_new_issues(self, date, user_id):
+        content_for_telegraph_new_series = [
+            {"tag": "b", "children": ["New series starting:"]},
+        ]
+        content_for_telegraph_continuous = [
+            {"tag": "p", "children": []},
+            {"tag": "hr", "children": ["• • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • •"]},
+            {"tag": "b", "children": ["Continuous series"]}
+        ]
         self.params['filter'] = f'store_date:{date[0]}|{date[1]}'
         data = self.api_handler.get_request(url=self.url,params=self.params)
-        #     to rewrite for the dynamic db
-        with open('/Users/oleksiikol/Documents/ComicsHelper/database/database.json', 'r') as db_file:
-            db = json.load(db_file)
-            following_comics = db.keys()
+        # with open(db_path, 'r') as db_file:
+        #     db = json.load(db_file)
+        #     following_comics = db.keys()
+        following_comics = self.db_handler.get_reading_list(user_id)
         for comic in data['results']:
             comic_name = comic['volume']['name'].replace(":", ' -')
             if comic_name in following_comics:
                 logger.info(f'{comic['volume']['name']} is in reading list')
-                self.content_for_telegraph_continuous += self.prep_content(comic)
+                content_for_telegraph_continuous += self.prep_content(comic)
             elif comic['issue_number'] == '1':
                 logger.info(f'{comic['volume']['name']} is a new series')
-                self.content_for_telegraph_new_series += self.prep_content(comic)
+                content_for_telegraph_new_series += self.prep_content(comic)
             else:
                 pass
-        return (self.content_for_telegraph_new_series + self.content_for_telegraph_continuous)
+        return content_for_telegraph_new_series + content_for_telegraph_continuous

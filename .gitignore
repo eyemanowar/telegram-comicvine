@@ -62,6 +62,9 @@ Thumbs.db
 # Logs
 *.log
 
+#Database
+*.db
+
 #Debug files
 hello1.json
 hello.json

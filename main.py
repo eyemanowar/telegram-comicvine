@@ -18,5 +18,5 @@ date = Date()
 
 today = date.get_the_current_week()
 print(today)
-new_issues = comicvine.get_new_issues(today)
+new_issues = comicvine.get_new_issues(today, 1)
 tg_post = tg.make_post(new_issues)
