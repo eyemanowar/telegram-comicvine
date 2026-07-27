@@ -1,6 +1,7 @@
 from api_handler import ApiHandler
 from database_helper import DbHandler
 # import json
+import html
 import re
 from dotenv import load_dotenv
 import os
@@ -10,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 load_dotenv('keys.env')
 COMICVINE_API_KEY = os.getenv('COMICVINE_API_KEY')
-# db_path = os.getenv('DATABASE_PATH', 'reading_list.json')
+db_path = os.getenv('DATABASE_PATH', 'reading_list.json')
 
 class ComicVine:
 
@@ -30,10 +31,11 @@ class ComicVine:
     @staticmethod
     def prep_content(comic):
         if not comic['description']:
-            cleaned_description = 'No discription'
+            description = ''
         else:
             cleaned_description = comic['description'].replace('</em>', ' ')
-        description = re.sub(r'<[a-z]{1,6}>|<\/[a-z]{1,6}>', '', cleaned_description, flags=re.IGNORECASE)
+            cleaned_description = html.unescape(cleaned_description)
+            description = re.sub(r'<.*?>', '', cleaned_description, flags=re.IGNORECASE)
         image = comic['image']['original_url']
         title = comic['volume']['name']
         issue_number = comic['issue_number']
@@ -41,7 +43,11 @@ class ComicVine:
             {"tag": "p", "children": []},
             {"tag": "hr", "children": ["• • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • •"]},
             {"tag": "b", "children": [f"{title} #{issue_number}"]},
-            {"tag": "img", "attrs": {"src": image}},
+            {"tag": "figure", "children": [
+                {"tag": "img", "attrs": {"src": image}},
+                {"tag": "figcaption", "children": [f'{title}']}
+             ]
+             },
             {"tag": "p", "children": [description]}
         ]
         return comic_content
@@ -63,7 +69,7 @@ class ComicVine:
         following_comics = self.db_handler.get_reading_list(user_id)
         for comic in data['results']:
             comic_name = comic['volume']['name'].replace(":", ' -')
-            if comic_name in following_comics:
+            if comic_name.lower() in following_comics:
                 logger.info(f'{comic['volume']['name']} is in reading list')
                 content_for_telegraph_continuous += self.prep_content(comic)
             elif comic['issue_number'] == '1':
