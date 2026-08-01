@@ -73,3 +73,27 @@ class DbHandler:
         rows = cursor.fetchall()
         conn.close()
         return [row['id'] for row in rows]
+
+    def add_many(self, user_id, comic_list):
+        added = 0
+        if isinstance(comic_list, str):
+            comic_list = comic_list.split('\n')
+        for comic in comic_list:
+            comic_title = comic.strip().lower()
+            if not comic_title:
+                continue
+            added += 1
+            self.add_series(user_id, comic_title)
+        return added
+
+    def remove_many(self, user_id, comic_list):
+        removed = 0
+        if isinstance(comic_list, str):
+            comic_list = comic_list.split('\n')
+        for comic in comic_list:
+            comic_title = comic.strip().lower()
+            if not comic_title:
+                continue
+            removed += 1
+            self.add_series(user_id, comic_title)
+        return removed

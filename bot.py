@@ -1,10 +1,9 @@
-import requests
-import logging
+
 from telegram import Update, ReplyKeyboardRemove, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes, ConversationHandler, MessageHandler, CallbackQueryHandler, filters
 from database_helper import DbHandler
 from dotenv import load_dotenv
-import os
+import json, csv, io, os, logging
 
 load_dotenv('keys.env')
 BOT_TOKEN = os.getenv('BOT_KEY')
@@ -58,23 +57,58 @@ class Bot:
         await update.message.reply_text("Type a series to remove:")
         return ASK_SERIES
 
+    async def handling_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user = update.effective_user
+        doc = update.message.document
+        file = await context.bot.get_file(doc.file_id)  # fetch file handle from Telegram
+        content = await file.download_as_bytearray()
+        text = content.decode('utf-8')
+        name = (doc.file_name or "")
+        if name.endswith(".json"):
+            try:
+                data = json.loads(text)
+                series = data.keys()
+            except json.JSONDecodeError:
+                await update.message.reply_text(f"Uploaded file is not valid JSON")
+                return ASK_SERIES
+        elif name.endswith(".csv"):
+            comics = csv.reader(io.StringIO(text))
+            series = []
+            for comic in comics:
+                if not comic:
+                    continue
+                if comic[0] in ('title', 'Title', 'Series', 'series', 'Ongoing', 'ongoing'):
+                    continue
+                series.append(comic[0])
+        else:
+            await update.message.reply_text("Please send a .json or .csv file")
+            return ASK_SERIES
+        if context.user_data['mode'] == 'add':
+            processed_comics = self.db.add_many(user.id, series)
+            await update.message.reply_text(f"{processed_comics} was/were processed.\nAdd more series?", reply_markup=self.yes_no)
+            return ASK_MORE
+        else:
+            processed_comics = self.db.remove_many(user.id, series)
+            await update.message.reply_text(f"{processed_comics} was/were processed.\nRemove more series?", reply_markup=self.yes_no)
+            return ASK_MORE
+
     async def handling_series(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         series = update.message.text.lower()
         if context.user_data['mode'] == 'add':
-            self.db.add_series(user.id, series)
-            await update.message.reply_text("Add more series?", reply_markup=self.yes_no)
+            processed_comics = self.db.add_many(user.id, series)
+            await update.message.reply_text(f"{processed_comics} was/were processed.\nAdd more series?", reply_markup=self.yes_no)
             return ASK_MORE
         else:
-            self.db.remove_series(user.id, series)
-            await update.message.reply_text("Remove more series?", reply_markup=self.yes_no)
+            processed_comics = self.db.remove_many(user.id, series)
+            await update.message.reply_text(f"{processed_comics} was/were processed.\nRemove more series?", reply_markup=self.yes_no)
             return ASK_MORE
 
     async def handling_more(self,update: Update, context: ContextTypes.DEFAULT_TYPE):
         answer = update.message.text
         if answer == "Yes":
             if context.user_data['mode'] == 'add':
-                await update.message.reply_text("Type a series to add:")
+                await update.message.reply_text("Upload a JSON file or type a series to add:")
                 return ASK_SERIES
             else:
                 await update.message.reply_text("Type a series to remove:")
@@ -102,7 +136,8 @@ def main() -> None:
             MessageHandler(filters.Text(["➖ Remove"]), bot.start_remove),
         ],
         states={
-            ASK_SERIES: [MessageHandler(filters.TEXT & ~filters.COMMAND, bot.handling_series)],
+            ASK_SERIES: [MessageHandler(filters.TEXT & ~filters.COMMAND, bot.handling_series),
+                         MessageHandler(filters.Document.FileExtension("json"), bot.handling_document),],
             ASK_MORE: [MessageHandler(filters.Text(["Yes", "No"]), bot.handling_more)]
         },
         fallbacks=[CommandHandler("cancel", bot.cancel)],
