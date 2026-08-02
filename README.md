@@ -1,67 +1,88 @@
 # Telegram ComicVine Bot
 
-A Telegram bot that fetches and formats weekly comic book releases from ComicVine API, helping comic book enthusiasts track new issues and series.
+A multi-user Telegram bot that fetches weekly comic book releases from the ComicVine API, filters them against each user's personal reading list, and publishes a formatted digest to Telegraph.
 
 ## Features
 
-- **Automated Release Tracking**: Fetches weekly comic releases from ComicVine API based on store dates
-- **Smart Filtering**: Distinguishes between new series debuts (issue #1) and ongoing series
-- **Reading List Integration**: Cross-references releases with your personal comic database from ComicsHelper
-- **Telegraph Publishing**: Formats and publishes releases to Telegraph for easy reading
-- **API Integration**: Backend deployed on PythonAnywhere for reliable access
+- **Multi-user**: each Telegram user has their own reading list, stored in SQLite
+- **Reading list management**: add, list, and remove series via an interactive reply keyboard
+- **Bulk import**: upload your library as free text (one per line), a `.json` file, or a `.csv` file
+- **Weekly releases**: `/releases` runs the pipeline for the user's list and returns a Telegraph link
+- **Smart filtering**: distinguishes new series debuts (issue #1) from ongoing series you follow
+- **Telegraph publishing**: formats releases (cover images, cleaned descriptions) into a Telegraph article
 
 ## Tech Stack
 
-- **Python 3.x**
-- **python-telegram-bot**: Telegram Bot API wrapper
-- **requests**: HTTP library for API calls
-- **Flask**: Backend API framework
-- **Telegraph API**: Content publishing
+- **Python 3.12**
+- **python-telegram-bot** — Telegram Bot API wrapper (async)
+- **requests** — HTTP calls to ComicVine and Telegraph
+- **SQLite** (`sqlite3`, stdlib) — per-user reading lists
+- **python-dotenv** — configuration/secrets loading
+- **Flask** — optional backend API (not required to run the bot)
+- **pytest** — test suite
 
 ## Project Structure
 
 ```
 telegram-comicvine/
-├── bot.py              # Telegram bot entry point
-├── comic_vine.py       # ComicVine API integration & data processing
-├── api_handler.py      # Generic API request handler
-├── telegraph.py        # Telegraph API integration
-├── flask_app.py        # Backend API endpoint
-├── time_helper.py      # Date/time utilities
-└── content.json        # Cached comic data
+├── bot.py              # Telegram bot — handlers, menus, entry point
+├── comic_vine.py       # ComicVine API integration & release filtering
+├── api_handler.py      # Generic HTTP request handler
+├── telegraph.py        # Telegraph publishing
+├── database_helper.py  # SQLite schema + reading-list data access
+├── time_helper.py      # Week date-range helpers
+├── main.py             # Standalone pipeline runner (non-bot)
+├── flask_app.py        # Optional Flask API
+├── conftest.py         # pytest path setup
+└── tests/              # unit tests (time_helper, comic_vine, api_handler, database_helper)
 ```
 
-## Key Components
+## Data Model (SQLite)
 
-### ComicVine Integration (`comic_vine.py`)
-- Fetches issues by store date using ComicVine API
-- Parses and cleans HTML descriptions
-- Categorizes comics into:
-  - **New Series**: First issues (#1) 
-  - **Continuous Series**: Ongoing series from your reading list
+- `users` — one row per Telegram user (`id` = chat_id, `username`, `created_at`)
+- `reading_list` — one row per (user, series); `UNIQUE(user_id, series_name)`, foreign key to `users`
 
-### Bot Functionality (`bot.py`)
-- Telegram bot interface for user commands
-- Backend API: `https://eyemanowar.pythonanywhere.com/api/latest-releases`
+Series names are stored lowercase for case-insensitive matching against ComicVine.
 
 ## Setup
 
 1. Install dependencies:
 ```bash
-pip install python-telegram-bot requests python-dotenv Flask
+pip install -r requirements.txt
 ```
 
-2. Set environment variables:
+2. Create a `keys.env` file (copy the template and fill in your values):
 ```bash
-export COMICVINE_API_KEY='your_comicvine_api_key'
+cp keys.env.example keys.env
+```
+Required variables:
+```
+BOT_KEY=            # Telegram bot token from @BotFather
+COMICVINE_API_KEY=  # https://comicvine.gamespot.com/api/
+TELEGRAPH_API_KEY=  # https://api.telegra.ph/createAccount
+SQLITE_PATH=        # e.g. comics.db
 ```
 
-3. Configure bot token in `bot.py` (use environment variable in production)
-
-4. Run the bot:
+3. Run the bot:
 ```bash
 python bot.py
 ```
+
+The SQLite tables are created automatically on first run.
+
+## Bot Usage
+
+- `/start` — register and show the menu
+- **📋 List** — show your reading list
+- **➕ Add** — type series (one per line) or upload a `.json` / `.csv` file
+- **➖ Remove** — type or upload series to remove
+- **📅 Releases** — fetch this week's releases for your list and get a Telegraph link
+
+### Upload formats
+
+- **JSON** — an object whose keys are series names: `{"batman": {}, "spider-man": {}}`
+- **CSV** — one series per row in the first column (a `title` header row is skipped)
+- **Text** — one series name per line
 
 ## Running tests
 
@@ -70,43 +91,33 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-## Usage
+## Telegraph Content Format
 
-The bot cross-references ComicVine releases with your personal reading list from ComicsHelper, automatically highlighting:
-- New series starting this week
-- Issues from series you're following
-- Cover images and descriptions
-
-## API Response Format
-
-Telegraph-formatted JSON with structured content:
+Releases are serialized as Telegraph node JSON:
 ```json
 [
   {"tag": "b", "children": ["Series Name #1"]},
-  {"tag": "img", "attrs": {"src": "cover_url"}},
+  {"tag": "figure", "children": [
+    {"tag": "img", "attrs": {"src": "cover_url"}},
+    {"tag": "figcaption", "children": ["Series Name"]}
+  ]},
   {"tag": "p", "children": ["Description text"]}
 ]
 ```
 
-## Integration with ComicsHelper
+## Roadmap
 
-References the comic database at:
-```
-/Users/{user_name}/{path to ComicsHelper/database}/database.json
-```
-
-Only highlights issues from series in your reading list.
-
-## Future Enhancements
-
-- [ ] User authentication and personalized reading lists
-- [ ] Push notifications for followed series
-- [ ] Search functionality for specific comics
-- [ ] Weekly digest summaries
+- [x] Per-user reading lists (SQLite)
+- [x] Bulk import (text / JSON / CSV)
+- [x] On-demand weekly releases
+- [ ] Recurring weekly digest (scheduled notifications)
+- [ ] Filter modes (reading list / all / first issues / list + first)
+- [ ] Settings menu
+- [ ] Deployment (PythonAnywhere scheduled task, CI)
 
 ## License
 
-Personal project - educational purposes
+Personal project — educational purposes
 
 ## Author
 
