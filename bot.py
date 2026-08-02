@@ -2,8 +2,11 @@
 from telegram import Update, ReplyKeyboardRemove, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes, ConversationHandler, MessageHandler, CallbackQueryHandler, filters
 from database_helper import DbHandler
+from telegraph import Telegraph
+from comic_vine import ComicVine
+from time_helper import Date
 from dotenv import load_dotenv
-import json, csv, io, os, logging
+import json, csv, io, os, logging, asyncio
 
 load_dotenv('keys.env')
 BOT_TOKEN = os.getenv('BOT_KEY')
@@ -19,8 +22,11 @@ class Bot:
     def __init__(self):
         self.db = DbHandler()
         self.db.init_db()
+        self.comicvine = ComicVine()
+        self.tg = Telegraph()
+        self.date = Date()
         self.main_menu = ReplyKeyboardMarkup(
-            [["📋 List", "➕ Add", "➖ Remove"]],
+            [["📅 Releases", "📋 List", "➕ Add", "➖ Remove"]],
             resize_keyboard=True,
             # one_time_keyboard=True,
             input_field_placeholder="Choose an action"
@@ -35,7 +41,31 @@ class Bot:
         user = update.effective_user
         self.db.add_user(user.id, user.username)
         await update.message.reply_text(f"Hi {user.username}!")
+        await update.message.reply_text("""
+        📚 Managing your reading list
 
+➕ ADD SERIES
+Tap "➕ Add", then either:
+• Type series names — one per line
+• Or upload a file (.json or .csv)
+
+➖ REMOVE SERIES
+Tap "➖ Remove", then type or upload the series to remove (same formats).
+
+📄 FILE FORMATS
+• .json — an object where each series name is a key:
+     {"batman": {}, "spider-man": {}}
+• .csv — one series per row, in the first column
+  (a header row like "title" is skipped):
+     batman
+     spider-man
+
+✍️ TIPS
+• Capitalization doesn't matter — names are stored in lowercase.
+• Typing several? Put each on its own line — not commas
+  (some titles contain commas).
+• After each add/remove, tap "Yes" to continue or "No" to finish.
+""")
         await update.message.reply_text("Choose an option:", reply_markup=self.main_menu)
 
     async def list_series(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -121,12 +151,26 @@ class Bot:
         await update.message.reply_text('Cancelled.', reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
+    async def get_new_releases(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user = update.effective_user
+        week = self.date.get_the_current_week()
+        await update.message.reply_text("Getting new releases...")
+        content = await asyncio.to_thread(self.comicvine.get_new_issues, week, user.id)
+        result = await asyncio.to_thread(self.tg.make_post, content)
+        if not result:
+            await update.message.reply_text("No releases were found")
+        else:
+            await update.message.reply_text(f"Here's your pull list for this week:\n{result['result']['url']}")
+        return ConversationHandler.END
+
 
 def main() -> None:
     """Start the bot."""
     bot = Bot()
     application = Application.builder().token(BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", bot.start))
+
+    application.add_handler(MessageHandler(filters.Text(["📅 Releases"]), bot.get_new_releases))
 
     application.add_handler(MessageHandler(filters.Text(["📋 List"]), bot.list_series))
 
