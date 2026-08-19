@@ -1,22 +1,27 @@
 # Telegram ComicVine Bot
 
-A multi-user Telegram bot that fetches weekly comic book releases from the ComicVine API, filters them against each user's personal reading list, and publishes a formatted digest to Telegraph.
+> **Note on AI usage:** None of the application code in this repository was written by AI.
+> This project is a learning exercise — Claude Code was used only as a tutor (explaining
+> concepts, reviewing code, and helping debug); every line of the implementation was
+> written by the author. (This README and the in-bot help text were drafted with Claude.)
+
+A multi-user Telegram bot that fetches weekly comic book releases from the ComicVine API, filters them by each user's preferences, and publishes a formatted digest to Telegraph.
 
 ## Features
 
 - **Multi-user**: each Telegram user has their own reading list, stored in SQLite
-- **Reading list management**: add, list, and remove series via an interactive reply keyboard
+- **Reading list management**: add, list, and remove series via an interactive menu
 - **Bulk import**: upload your library as free text (one per line), a `.json` file, or a `.csv` file
-- **Weekly releases**: `/releases` runs the pipeline for the user's list and returns a Telegraph link
-- **Smart filtering**: distinguishes new series debuts (issue #1) from ongoing series you follow
-- **Telegraph publishing**: formats releases (cover images, cleaned descriptions) into a Telegraph article
+- **Filter modes**: choose what `Releases` shows you — reading list only, first issues only, list + first, or everything
+- **Weekly releases**: fetch this week's releases and get a Telegraph link
+- **Telegraph publishing**: cover images (with linked titles) and cleaned descriptions; a compact card layout keeps large "all" digests under Telegraph's size limit
 
 ## Tech Stack
 
 - **Python 3.12**
 - **python-telegram-bot** — Telegram Bot API wrapper (async)
 - **requests** — HTTP calls to ComicVine and Telegraph
-- **SQLite** (`sqlite3`, stdlib) — per-user reading lists
+- **SQLite** (`sqlite3`, stdlib) — per-user reading lists and preferences
 - **python-dotenv** — configuration/secrets loading
 - **Flask** — optional backend API (not required to run the bot)
 - **pytest** — test suite
@@ -29,7 +34,7 @@ telegram-comicvine/
 ├── comic_vine.py       # ComicVine API integration & release filtering
 ├── api_handler.py      # Generic HTTP request handler
 ├── telegraph.py        # Telegraph publishing
-├── database_helper.py  # SQLite schema + reading-list data access
+├── database_helper.py  # SQLite schema + reading-list / settings data access
 ├── time_helper.py      # Week date-range helpers
 ├── main.py             # Standalone pipeline runner (non-bot)
 ├── flask_app.py        # Optional Flask API
@@ -39,7 +44,7 @@ telegram-comicvine/
 
 ## Data Model (SQLite)
 
-- `users` — one row per Telegram user (`id` = chat_id, `username`, `created_at`)
+- `users` — one row per Telegram user: `id` (chat_id), `username`, `created_at`, `filter_mode`
 - `reading_list` — one row per (user, series); `UNIQUE(user_id, series_name)`, foreign key to `users`
 
 Series names are stored lowercase for case-insensitive matching against ComicVine.
@@ -72,11 +77,23 @@ The SQLite tables are created automatically on first run.
 
 ## Bot Usage
 
-- `/start` — register and show the menu
+The menu is two-tier:
+
+**Main menu**
+- **📅 Releases** — fetch this week's releases (filtered by your mode) and get a Telegraph link
+- **⚙️ Settings** — manage your list and filters
+
+**Settings**
 - **📋 List** — show your reading list
-- **➕ Add** — type series (one per line) or upload a `.json` / `.csv` file
-- **➖ Remove** — type or upload series to remove
-- **📅 Releases** — fetch this week's releases for your list and get a Telegraph link
+- **➕ Add** — add series (type one per line, or upload a `.json` / `.csv` file)
+- **➖ Remove** — remove series (type or upload)
+- **⚙️ Filter mode** — choose what `Releases` shows
+
+**Filter modes**
+- **📖 Reading List** — only series you follow
+- **🆕 First Issues** — only new #1 debuts
+- **⭐ List + First** — your series + new debuts (default)
+- **🌐 All Series** — everything out this week (compact layout)
 
 ### Upload formats
 
@@ -99,7 +116,9 @@ Releases are serialized as Telegraph node JSON:
   {"tag": "b", "children": ["Series Name #1"]},
   {"tag": "figure", "children": [
     {"tag": "img", "attrs": {"src": "cover_url"}},
-    {"tag": "figcaption", "children": ["Series Name"]}
+    {"tag": "figcaption", "children": [
+      {"tag": "a", "attrs": {"href": "series_url"}, "children": ["Series Name"]}
+    ]}
   ]},
   {"tag": "p", "children": ["Description text"]}
 ]
@@ -110,9 +129,10 @@ Releases are serialized as Telegraph node JSON:
 - [x] Per-user reading lists (SQLite)
 - [x] Bulk import (text / JSON / CSV)
 - [x] On-demand weekly releases
+- [x] Filter modes + Settings menu
 - [ ] Recurring weekly digest (scheduled notifications)
-- [ ] Filter modes (reading list / all / first issues / list + first)
-- [ ] Settings menu
+- [ ] Input validation & error handling pass
+- [ ] Bot handler tests
 - [ ] Deployment (PythonAnywhere scheduled task, CI)
 
 ## License

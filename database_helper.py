@@ -11,6 +11,7 @@ users_table = """
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY,
     username TEXT, 
+    filter_mode TEXT DEFAULT 'list_and_first',
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 """
@@ -97,3 +98,18 @@ class DbHandler:
             removed += 1
             self.add_series(user_id, comic_title)
         return removed
+
+    def get_filter_mode(self,user_id):
+        conn = self.open_connection()
+        row = conn.execute("SELECT filter_mode from users WHERE id = ?", (user_id,))
+        filter_mode = row.fetchone()
+        conn.close()
+        if not filter_mode:
+            return "list_and_first"
+        return filter_mode['filter_mode']
+
+    def set_filter_mode(self,user_id, mode):
+        conn = self.open_connection()
+        row = conn.execute('UPDATE users SET filter_mode = ? WHERE id = ?', (mode, user_id))
+        conn.commit()
+        conn.close()

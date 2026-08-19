@@ -25,8 +25,18 @@ class Bot:
         self.comicvine = ComicVine()
         self.tg = Telegraph()
         self.date = Date()
+        self.settings_menu = ReplyKeyboardMarkup(
+            [
+                ["📋 List", "➕ Add", "➖ Remove"],
+                ["⚙️ Filter mode"],
+                ["⬅ Back"]
+             ],
+            resize_keyboard=True,
+            # one_time_keyboard=True,
+            input_field_placeholder="Choose an action"
+        )
         self.main_menu = ReplyKeyboardMarkup(
-            [["📅 Releases", "📋 List", "➕ Add", "➖ Remove"]],
+            [["📅 Releases", "⚙️ Settings"]],
             resize_keyboard=True,
             # one_time_keyboard=True,
             input_field_placeholder="Choose an action"
@@ -36,35 +46,49 @@ class Bot:
             resize_keyboard=True,
             one_time_keyboard=True,
         )
+        self.filter_menu = ReplyKeyboardMarkup(
+            [
+                ["⭐ List + First", "🌐 All Series"],
+                ["📖 Reading List", "🆕 First Issues"],
+                ["⬅ Back To Settings"]
+            ]
+            ,
+            resize_keyboard=True,
+            # one_time_keyboard=True,
+            input_field_placeholder="Choose an action"
+        )
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         self.db.add_user(user.id, user.username)
         await update.message.reply_text(f"Hi {user.username}!")
         await update.message.reply_text("""
-        📚 Managing your reading list
+📚 Comic release tracker
 
-➕ ADD SERIES
-Tap "➕ Add", then either:
-• Type series names — one per line
-• Or upload a file (.json or .csv)
+Track weekly comic releases, filtered to your taste.
 
-➖ REMOVE SERIES
-Tap "➖ Remove", then type or upload the series to remove (same formats).
+MAIN MENU
+📅 Releases — this week's pull list as a Telegraph link
+⚙️ Settings — manage your list and filters
 
-📄 FILE FORMATS
-• .json — an object where each series name is a key:
-     {"batman": {}, "spider-man": {}}
-• .csv — one series per row, in the first column
-  (a header row like "title" is skipped):
-     batman
-     spider-man
+SETTINGS
+📋 List — show your reading list
+➕ Add — add series (type one per line, or upload .json/.csv)
+➖ Remove — remove series (type or upload)
+⚙️ Filter mode — choose what Releases shows you
 
-✍️ TIPS
-• Capitalization doesn't matter — names are stored in lowercase.
-• Typing several? Put each on its own line — not commas
-  (some titles contain commas).
-• After each add/remove, tap "Yes" to continue or "No" to finish.
+FILTER MODES
+📖 Reading List — only series you follow
+🆕 First Issues — only new #1 debuts
+⭐ List + First — your series + new debuts (default)
+🌐 All Series — everything out this week
+
+FILE FORMATS
+• .json — object with series names as keys: {"batman": {}, "spider-man": {}}
+• .csv — one series per row, first column (a "title" header row is skipped)
+• text — one series name per line
+
+Capitalization doesn't matter. After each add/remove, tap "Yes" to continue or "No" to finish.
 """)
         await update.message.reply_text("Choose an option:", reply_markup=self.main_menu)
 
@@ -163,6 +187,29 @@ Tap "➖ Remove", then type or upload the series to remove (same formats).
             await update.message.reply_text(f"Here's your pull list for this week:\n{result['result']['url']}")
         return ConversationHandler.END
 
+    async def open_settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text("Choose settings:", reply_markup=self.settings_menu)
+
+    async def back_to_main(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text("Back on main menu", reply_markup=self.main_menu)
+
+    async def back_to_settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text("Back on settings menu", reply_markup=self.settings_menu)
+
+    async def filter_settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text("Choose your filter:", reply_markup=self.filter_menu)
+
+    async def set_mode(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        label = update.message.text
+        mapping = {
+            "📖 Reading List" : 'list',
+            "🌐 All Series" : 'all',
+            "🆕 First Issues" : "first",
+            "⭐ List + First" : "list_and_first"
+        }
+        mode = mapping[label]
+        self.db.set_filter_mode(update.effective_user.id, mode)
+        await update.message.reply_text(f"Mode set to {label}. Back to settings", reply_markup=self.settings_menu)
 
 def main() -> None:
     """Start the bot."""
@@ -171,6 +218,13 @@ def main() -> None:
     application.add_handler(CommandHandler("start", bot.start))
 
     application.add_handler(MessageHandler(filters.Text(["📅 Releases"]), bot.get_new_releases))
+    application.add_handler(MessageHandler(filters.Text(["⚙️ Settings"]), bot.open_settings))
+    application.add_handler(MessageHandler(filters.Text(["⬅ Back"]), bot.back_to_main))
+    application.add_handler(MessageHandler(filters.Text(["⬅ Back To Settings"]), bot.back_to_settings))
+    application.add_handler(MessageHandler(filters.Text(['⚙️ Filter mode']), bot.filter_settings))
+    application.add_handler(MessageHandler(
+        filters.Text(["📖 Reading List", "🌐 All Series", "🆕 First Issues", "⭐ List + First"]),
+        bot.set_mode))
 
     application.add_handler(MessageHandler(filters.Text(["📋 List"]), bot.list_series))
 
@@ -181,7 +235,9 @@ def main() -> None:
         ],
         states={
             ASK_SERIES: [MessageHandler(filters.TEXT & ~filters.COMMAND, bot.handling_series),
-                         MessageHandler(filters.Document.FileExtension("json"), bot.handling_document),],
+                         MessageHandler(filters.Document.FileExtension("json"), bot.handling_document),
+                         MessageHandler(filters.Document.FileExtension("csv"), bot.handling_document),
+                         ],
             ASK_MORE: [MessageHandler(filters.Text(["Yes", "No"]), bot.handling_more)]
         },
         fallbacks=[CommandHandler("cancel", bot.cancel)],
