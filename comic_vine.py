@@ -31,7 +31,8 @@ class ComicVine:
 
     @staticmethod
     def prep_content(comic, compact=False):
-        image = comic['image']['original_url']
+        image_obj = comic.get('image')
+        image = image_obj.get('original_url') if image_obj else None
         title = comic['volume']['name']
         issue_number = comic['issue_number']
         link = comic['volume']['site_detail_url']
@@ -39,13 +40,14 @@ class ComicVine:
             {"tag": "p", "children": []},
             {"tag": "hr", "children": ["• • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • •"]},
             {"tag": "b", "children": [f"{title} #{issue_number}"]},
-            {"tag": "figure", "children": [
+        ]
+        if image:
+            comic_content.append({"tag": "figure", "children": [
                 {"tag": "img", "attrs": {"src": image}},
                 {"tag": "figcaption", "children": [
                     {"tag": "a", "attrs": {"href": link}, "children": [f'{title}']}
                 ]}
-            ]},
-        ]
+            ]})
         if not compact:
             if not comic['description']:
                 description = ''

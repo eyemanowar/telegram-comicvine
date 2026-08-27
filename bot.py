@@ -57,12 +57,7 @@ class Bot:
             # one_time_keyboard=True,
             input_field_placeholder="Choose an action"
         )
-
-    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        user = update.effective_user
-        self.db.add_user(user.id, user.username)
-        await update.message.reply_text(f"Hi {user.username}!")
-        await update.message.reply_text("""
+        self.greeting_message = """
 📚 Comic release tracker
 
 Track weekly comic releases, filtered to your taste.
@@ -89,7 +84,18 @@ FILE FORMATS
 • text — one series name per line
 
 Capitalization doesn't matter. After each add/remove, tap "Yes" to continue or "No" to finish.
-""")
+"""
+
+    async def on_error(self, update: Update, context: ContextTypes.DEFAULT_TYPE ):
+        logger.error("Handler error", exc_info=context.error)
+        if isinstance(update, Update) and update.effective_message:
+            await update.effective_message.reply_text("Something went wrong. Try again.")
+
+    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user = update.effective_user
+        self.db.add_user(user.id, user.username)
+        await update.message.reply_text(f"Hi {user.username}!")
+        await update.message.reply_text(self.greeting_message)
         await update.message.reply_text("Choose an option:", reply_markup=self.main_menu)
 
     async def list_series(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -114,17 +120,32 @@ Capitalization doesn't matter. After each add/remove, tap "Yes" to continue or "
     async def handling_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         doc = update.message.document
+        if doc.file_size and doc.file_size > 1_000_000:
+            await update.message.reply_text("File too large.")
+            return ASK_SERIES
         file = await context.bot.get_file(doc.file_id)  # fetch file handle from Telegram
         content = await file.download_as_bytearray()
-        text = content.decode('utf-8')
+        try:
+            text = content.decode('utf-8')
+        except:
+            await update.message.reply_text(f"Couldn't read the file")
+            return ASK_SERIES
         name = (doc.file_name or "")
+
         if name.endswith(".json"):
             try:
                 data = json.loads(text)
-                series = data.keys()
+                if isinstance(data, dict):
+                    series = data.keys()
+                elif isinstance(data, list):
+                    series = data
+                else:
+                    await update.message.reply_text(f"The json format is not recognized")
+                    return ASK_SERIES
             except json.JSONDecodeError:
                 await update.message.reply_text(f"Uploaded file is not valid JSON")
                 return ASK_SERIES
+
         elif name.endswith(".csv"):
             comics = csv.reader(io.StringIO(text))
             series = []
@@ -134,6 +155,7 @@ Capitalization doesn't matter. After each add/remove, tap "Yes" to continue or "
                 if comic[0] in ('title', 'Title', 'Series', 'series', 'Ongoing', 'ongoing'):
                     continue
                 series.append(comic[0])
+
         else:
             await update.message.reply_text("Please send a .json or .csv file")
             return ASK_SERIES
@@ -179,13 +201,19 @@ Capitalization doesn't matter. After each add/remove, tap "Yes" to continue or "
         user = update.effective_user
         week = self.date.get_the_current_week()
         await update.message.reply_text("Getting new releases...")
-        content = await asyncio.to_thread(self.comicvine.get_new_issues, week, user.id)
+
+        try:
+            content = await asyncio.to_thread(self.comicvine.get_new_issues, week, user.id)
+        except (RuntimeError, AssertionError) as e:
+            logger.error("fetch failed", exc_info=e)
+            await update.message.reply_text("Couldn't reach the source. Try again later.")
+            return
+
         result = await asyncio.to_thread(self.tg.make_post, content)
-        if not result:
-            await update.message.reply_text("No releases were found")
+        if result is None:
+            await update.message.reply_text("Couldn't publish the digest (it may be too large). Try a narrower filter.")
         else:
             await update.message.reply_text(f"Here's your pull list for this week:\n{result['result']['url']}")
-        return ConversationHandler.END
 
     async def open_settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Choose settings:", reply_markup=self.settings_menu)
@@ -243,12 +271,8 @@ def main() -> None:
         fallbacks=[CommandHandler("cancel", bot.cancel)],
     )
 
+    application.add_error_handler(bot.on_error)
     application.add_handler(handling_series)
-
-    # application.add_handler(MessageHandler(filters.Text(["➖ Remove"]), bot.remove_flow))
-
-    # application.add_handler(CommandHandler("latest", latest_releases))
-
     application.run_polling()
 
 main()
